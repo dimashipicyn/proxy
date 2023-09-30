@@ -1,5 +1,6 @@
 #include "Tcpsocket.h"
 #include <memory>
+#include <sys/_types/_socklen_t.h>
 
 bool initSockets()
 {
@@ -69,7 +70,7 @@ bool TcpSocket::makeNonBlock()
     }
 #else
     int nonBlocking = 1;
-    if (fcntl(handle, F_SETFL, O_NONBLOCK, nonBlocking) != 0)
+    if (fcntl(handle_, F_SETFL, O_NONBLOCK, nonBlocking) != 0)
     {
         return false;
     }
@@ -101,7 +102,8 @@ bool TcpSocket::connect() {
 TcpSocketPtr TcpSocket::accept()
 {
     int newSocket = -1;
-    if (newSocket = ::accept(handle_, (struct sockaddr*)&addr_, (int[]){sizeof(addr_)}); newSocket == -1) {
+    socklen_t len = sizeof(addr_);
+    if (newSocket = ::accept(handle_, (struct sockaddr*)&addr_, &len); newSocket == -1) {
         return nullptr;
     }
 

@@ -9,7 +9,7 @@ add_executable(${PROJECT_NAME}
   Server.cpp
 )
 
-add_subdirectory(client)
+#add_subdirectory(client)
 
 if(ASAN_ENABLED)
   if(MSVC)

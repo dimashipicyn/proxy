@@ -1,4 +1,7 @@
 #include "Server.h"
+
+#include <sys/select.h>
+
 #include <memory>
 #include <iostream>
 
