@@ -5,10 +5,13 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #pragma comment(lib, "wsock32.lib")
-#else
+#elif __APPLE__
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
+#else
 #endif
 
 #include "NonCopyable.h"
