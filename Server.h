@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <list>
+#include <string>
 #include <unordered_map>
 
 class Server
@@ -31,8 +32,9 @@ private:
     using SocketsIter = std::list<TcpSocketPtr>::iterator;
     struct Connection
     {
-        SocketsIter sender;
-        SocketsIter receiver;
+        SocketsIter from;
+        SocketsIter to;
+        std::string data;
     };
     std::unordered_map<int, Connection> clients_;
 };
