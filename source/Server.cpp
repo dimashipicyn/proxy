@@ -6,7 +6,9 @@
 #include <iostream>
 #include <memory>
 
-Server::Server(const char* host, short port)
+Server::Server(const char* host, short port, const char* dbHost, short dbPort)
+    : dbHost_{ dbHost }
+    , dbPort_{ dbPort }
 {
     if (initSockets())
     {
@@ -97,7 +99,7 @@ void Server::onAccept(fd_set& readSockets)
     newClient->makeNonBlock();
     int newClientFd = newClient->getFd();
 
-    auto partner = TcpSocket::connect("postgres", 5432);
+    auto partner = TcpSocket::connect(dbHost_, dbPort_);
     if (!partner)
     {
         return;

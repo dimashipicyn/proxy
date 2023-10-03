@@ -12,7 +12,7 @@
 class Server
 {
 public:
-    Server(const char* host, short port);
+    Server(const char* host, short port, const char* dbHost, short dbPort);
 
     void run();
 
@@ -38,6 +38,10 @@ private:
         std::string data;
     };
     std::unordered_map<int, Connection> clients_;
+
+    const char* dbHost_ = nullptr;
+    short dbPort_ = 0;
+
     int maxSocket_ = 0;
     bool isOk_ = false;
 };

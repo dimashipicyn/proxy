@@ -4,9 +4,9 @@ services:
   proxy:
     build: ./proxy
     environment:
-      PROXY_HOST: "127.0.0.1"
+      PROXY_HOST: "0.0.0.0"
       PROXY_PORT: "5433"
-      POSTGRES_HOST: "127.0.0.1"
+      POSTGRES_HOST: "postgres"
       POSTGRES_PORT: "5432"
     ports:
       - "5433:5433"
@@ -25,8 +25,6 @@ services:
       POSTGRES_PASSWORD: "1234"
     ports:
       - "5432:5432"
-    # volumes:
-    #   - .:/docker-entrypoint-initdb.d
 # Benchmark
   benchmark:
     build: ./benchmark
