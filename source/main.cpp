@@ -2,7 +2,7 @@
 
 int main(int, char**)
 {
-    Server server("127.0.0.1", 5433);
+    Server server("0.0.0.0", 5433);
 
     server.run();
 }

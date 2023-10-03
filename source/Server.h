@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Tcpsocket.h"
+#include "TcpSocket.h"
+
+#include <sys/select.h>
 
 #include <functional>
 #include <list>
@@ -14,16 +16,15 @@ public:
 
     void run();
 
-
 private:
     bool isListener(int fd) const
     {
         return fd == listener_->getFd();
     }
 
-    void onAccept();
-    void onRead();
-    void onWrite();
+    void onAccept(fd_set& readSockets);
+    void onRead(int clientSocket, fd_set& readSockets, fd_set& writeSockets);
+    void onWrite(int clientSocket, fd_set& readSockets, fd_set& writeSockets);
 
 private:
     TcpSocketPtr listener_;
@@ -37,4 +38,6 @@ private:
         std::string data;
     };
     std::unordered_map<int, Connection> clients_;
+    int maxSocket_ = 0;
+    bool isOk_ = false;
 };

@@ -1,8 +1,8 @@
 {
-  "version": 6,
+  "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 23,
+    "minor": 22,
     "patch": 0
   },
   "configurePresets": [
@@ -20,7 +20,6 @@
         "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/bin"
       }
     },
-
     {
       "name": "base debug",
       "hidden": true,
@@ -38,40 +37,67 @@
       }
     },
     {
-      "name": "msvc-debug",
-      "inherits": "base debug",
+      "name": "msvc",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "cl.exe",
         "CMAKE_CXX_COMPILER": "cl.exe"
       }
+    },
+    {
+      "name": "gcc",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "msvc-debug",
+      "inherits": ["base debug", "msvc"]
     },
     {
       "name": "msvc-release",
-      "inherits": "base release",
-      "cacheVariables": {
-        "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe"
-      }
+      "inherits": ["base release", "msvc"]
+    },
+    {
+      "name": "gcc-debug",
+      "inherits": ["base debug", "gcc"]
+    },
+    {
+      "name": "gcc-release",
+      "inherits": ["base release", "gcc"]
     },
     {
       "name": "clang-debug",
-      "inherits": "base debug",
-      "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
-      }
+      "inherits": ["base release", "clang"]
     },
     {
       "name": "clang-release",
-      "inherits": "base release",
+      "inherits": ["base release", "clang"]
+    },
+    {
+      "name": "gperf",
+      "inherits": "gcc-debug",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
+        "GPERF_ENABLED": "ON"
       }
     },
     {
       "name": "msvc-asan",
       "inherits": "msvc-debug",
+      "cacheVariables": {
+        "ASAN_ENABLED": "ON"
+      }
+    },
+    {
+      "name": "clang-asan",
+      "inherits": "clang-debug",
       "cacheVariables": {
         "ASAN_ENABLED": "ON"
       }

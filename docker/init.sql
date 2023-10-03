@@ -1,0 +1,3 @@
+CREATE USER benchmark;
+CREATE DATABASE benchmark;
+GRANT ALL PRIVILEGES ON DATABASE benchmark TO benchmark;
