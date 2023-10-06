@@ -2,9 +2,36 @@
 #include "Log.h"
 #include "TcpSocket.h"
 
+#include <sys/epoll.h>
+
 #include <cstring>
 #include <iostream>
 #include <memory>
+
+namespace
+{
+void epollAdd(int epfd, int fd, uint32_t events)
+{
+    struct epoll_event ev;
+    ev.events = events;
+    ev.data.fd = fd;
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == -1)
+    {
+        LOG_ERROR("Epoll_ctl failed! Error: %s\n", strerror(errno));
+    }
+}
+
+void epollMod(int epfd, int fd, uint32_t events)
+{
+    struct epoll_event ev;
+    ev.events = events;
+    ev.data.fd = fd;
+    if (epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev) == -1)
+    {
+        LOG_ERROR("Epoll_ctl failed! Error: %s\n", strerror(errno));
+    }
+}
+}
 
 Server::Server(const char* host, short port, const char* dbHost, short dbPort)
     : dbHost_{ dbHost }
@@ -12,9 +39,9 @@ Server::Server(const char* host, short port, const char* dbHost, short dbPort)
 {
     if (initSockets())
     {
-        if (listener_ = TcpSocket::listen(host, port); listener_)
+        if (listener_ = TcpSocket::listen(host, port); !listener_.empty())
         {
-            isOk_ = listener_->makeNonBlock();
+            isOk_ = listener_.makeNonBlock();
         }
     }
 }
@@ -26,177 +53,166 @@ void Server::run()
         return;
     }
 
-    fd_set readSockets;
-    fd_set writeSockets;
+    const int MAX_EVENTS = 32;
+    epoll_event events[MAX_EVENTS];
 
-    maxSocket_ = listener_->getFd();
-    int startSocket = maxSocket_;
+    int epollfd = epoll_create1(0);
+    if (epollfd == -1)
+    {
+        LOG_ERROR("Epoll failed! Error: %s\n", strerror(errno));
+        return;
+    }
 
-    FD_ZERO(&readSockets);
-    FD_ZERO(&writeSockets);
-    FD_SET(listener_->getFd(), &readSockets);
+    epollAdd(epollfd, listener_.getFd(), EPOLLIN);
 
     // Основной цикл прокси-сервера
     while (true)
     {
-        // Создаем копию множества clientSockets
-        fd_set rs = readSockets;
-        fd_set ws = writeSockets;
-
-        // Используем select для ожидания активности на сокетах
-        if (select(maxSocket_ + 1, &rs, &ws, nullptr, nullptr) == -1)
+        int nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
+		for (int i = 0; i < nfds; i++)
+        // Проверяем каждый сокет на активность
         {
-            LOG_ERROR("Select error: %s\n", strerror(errno));
-            break;
-        }
-
-        // Проверяем каждый клиентский сокет на активность
-        for (int clientSocket = startSocket; clientSocket <= maxSocket_; ++clientSocket)
-        {
-            if (FD_ISSET(clientSocket, &rs))
+            int clientSocket = events[i].data.fd;
+            // Read
+            if (events[i].events & EPOLLIN)
             {
-                // Если новое клиентское подключение
+                // Если новое соединение
                 if (isListener(clientSocket))
                 {
-                    LOG_DEBUG("Accept socket: %d\n", clientSocket);
-                    onAccept(readSockets);
+                    LOG_DEBUG("Accept socket: %d\n", events[i].data.fd);
+                    TcpSocket newClient = listener_.accept();
+                    while (!newClient.empty())
+                    {
+                        newClient.makeNonBlock();
+                        // Принимаем соединения
+                        onAccept(epollfd, std::move(newClient));
+                        newClient = listener_.accept();
+                    }
                 }
                 // Если есть активность на клиентском сокете
                 else
                 {
-                    if (clients_.count(clientSocket) == 0)
+                    if (connections_.count(clientSocket) == 0)
                     {
                         continue;
                     }
+
                     LOG_DEBUG("Read socket: %d\n", clientSocket);
-                    onRead(clientSocket, readSockets, writeSockets);
+                    onRead(epollfd, clientSocket);
                 }
             }
-            if (FD_ISSET(clientSocket, &ws))
+            // Write
+            if (events[i].events & EPOLLOUT)
             {
-                if (clients_.count(clientSocket) == 0)
+                if (connections_.count(clientSocket) == 0)
                 {
                     continue;
                 }
 
                 LOG_DEBUG("Write socket: %d\n", clientSocket);
-                onWrite(clientSocket, readSockets, writeSockets);
+                onWrite(epollfd, clientSocket);
+            }
+            // Disconnect
+            if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+            {
+                if (connections_.count(clientSocket) == 0)
+                {
+                    continue;
+                }
+
+                // Клиент отключился или произошла ошибка, удаляем
+                onError(epollfd, clientSocket);
             }
         }
     }
 }
 
-void Server::onAccept(fd_set& readSockets)
+void Server::onAccept(int epollfd, TcpSocket&& newClient)
 {
-    LOG_DEBUG("New client on listener: %d\n", listener_->getFd());
-
-    auto newClient = listener_->accept();
-    if (!newClient)
-    {
-        return;
-    }
-
-    newClient->makeNonBlock();
-    int newClientFd = newClient->getFd();
+    int newClientFd = newClient.getFd();
 
     auto partner = TcpSocket::connect(dbHost_, dbPort_);
-    if (!partner)
+    if (partner.empty())
     {
         return;
     }
 
-    partner->makeNonBlock();
-    int partnerFd = partner->getFd();
+    partner.makeNonBlock();
+    int partnerFd = partner.getFd();
 
     // Добавляем новый клиентский сокет в множество
-    FD_SET(newClientFd, &readSockets);
-    FD_SET(partnerFd, &readSockets);
-
-    // Обновляем значение maxSocket, если необходимо
-    maxSocket_ = std::max<int>(maxSocket_, newClientFd);
-    maxSocket_ = std::max<int>(maxSocket_, partnerFd);
+    epollAdd(epollfd, newClientFd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    epollAdd(epollfd, partnerFd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
 
     auto newClientIter = sockets_.insert(sockets_.end(), std::move(newClient));
     auto partnerIter = sockets_.insert(sockets_.end(), std::move(partner));
 
-    clients_.emplace(newClientFd,
-        Connection { newClientIter, partnerIter, "" });
-    clients_.emplace(partnerFd,
-        Connection { partnerIter, newClientIter, "" });
+    connections_.emplace(newClientFd, Connection { newClientIter, partnerIter, "" });
+    connections_.emplace(partnerFd, Connection { partnerIter, newClientIter, "" });
 
     LOG_DEBUG("Connected: %d - %d\n", newClientFd, partnerFd);
 }
 
-void Server::onRead(int clientSocket, fd_set& readSockets, fd_set& writeSockets)
+void Server::onRead(int epollfd, int clientSocket)
 {
-    auto& client = clients_.at(clientSocket);
+    auto& conn = connections_.at(clientSocket);
 
-    int fromFd = client.from->get()->getFd();
-    int toFd = client.to->get()->getFd();
+    int partnerFd = conn.partner->getFd();
+    LOG_DEBUG("Read: %d - %d\n", clientSocket, partnerFd);
 
-    LOG_DEBUG("Read: %d - %d\n", fromFd, toFd);
-
-    char buffer[1024];
-    int size = 0;
-    memset(buffer, 0, sizeof(buffer));
+    char buffer[BUFFER_SIZE];
 
     // Читаем данные из клиентского сокета
-    size = client.from->get()->recv(buffer, sizeof(buffer));
-    if (size <= 0)
+    int size = conn.client->recv(buffer, sizeof(buffer));
+    if (size < 0)
     {
-        // Клиент отключился или произошла ошибка, удаляем сокет из
-        // множества
-        sockets_.erase(client.from);
-        sockets_.erase(client.to);
-
-        clients_.erase(fromFd);
-        clients_.erase(toFd);
-
-        FD_CLR(fromFd, &readSockets);
-        FD_CLR(toFd, &readSockets);
-        FD_CLR(fromFd, &writeSockets);
-        FD_CLR(toFd, &writeSockets);
-
-        LOG_DEBUG("Diconnect: %d - %d\n", fromFd, toFd);
+        // Клиент отключился или произошла ошибка, удаляем
+        onError(epollfd, clientSocket);
     }
     else
     {
-        FD_SET(toFd, &writeSockets);
-        client.data.append(buffer, size);
+        epollMod(epollfd, partnerFd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+        conn.data.append(buffer, size);
     }
 }
 
-void Server::onWrite(int clientSocket, fd_set& readSockets, fd_set& writeSockets)
+void Server::onWrite(int epollfd, int clientSocket)
 {
-    auto& toClient = clients_.at(clientSocket);
-    auto& fromClient = clients_.at(toClient.to->get()->getFd());
+    auto& conn = connections_.at(clientSocket);
+    auto& connPartner = connections_.at(conn.partner->getFd());;
 
-    int fromFd = toClient.from->get()->getFd();
-    int toFd = toClient.to->get()->getFd();
-
-    int size = toClient.from->get()->send(fromClient.data.c_str(), fromClient.data.size());
-    if (size <= 0)
+    int size = conn.client->send(connPartner.data.c_str(), connPartner.data.size());
+    if (size < 0)
     {
-        // Клиент отключился или произошла ошибка, удаляем сокет из множества
-        sockets_.erase(toClient.from);
-        sockets_.erase(toClient.to);
-
-        clients_.erase(fromFd);
-        clients_.erase(toFd);
-
-        FD_CLR(fromFd, &readSockets);
-        FD_CLR(toFd, &readSockets);
-        FD_CLR(fromFd, &writeSockets);
-        FD_CLR(toFd, &writeSockets);
-
-        LOG_DEBUG("Disconnect: %d - %d\n", fromFd, toFd);
+        // Клиент отключился или произошла ошибка, удаляем
+        onError(epollfd, clientSocket);
     }
     else
     {
-        fromClient.data.erase(0, size);
-        if (fromClient.data.empty())
+        connPartner.data.erase(0, size);
+        if (connPartner.data.empty())
         {
-            FD_CLR(clientSocket, &writeSockets);
+            epollMod(epollfd, clientSocket, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
         }
     }
+}
+
+void Server::onError(int epollfd, int clientSocket)
+{
+    auto& conn = connections_.at(clientSocket);
+
+    int clientFd = conn.client->getFd();
+    int partnerFd = conn.partner->getFd();
+
+    // Клиент отключился или произошла ошибка, удаляем
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, clientFd, NULL);
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, partnerFd, NULL);
+
+    sockets_.erase(conn.client);
+    sockets_.erase(conn.partner);
+
+    connections_.erase(clientFd);
+    connections_.erase(partnerFd);
+
+    LOG_DEBUG("Disconnect: %d - %d\n", clientFd, partnerFd);
 }

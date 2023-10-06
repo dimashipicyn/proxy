@@ -39,6 +39,6 @@ services:
       POSTGRES_USER: "benchmark"
       POSTGRES_DB: "benchmark"
       POSTGRES_PASSWORD: "1234"
-      CLIENTS: 100
+      CLIENTS: 10
       TIME_SEC: 30
-      THREADS: 2
+      THREADS: 10

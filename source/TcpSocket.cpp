@@ -37,7 +37,12 @@ void shotdownSockets()
 #endif
 }
 
-TcpSocketPtr TcpSocket::listen(const char* host, short port)
+TcpSocket::~TcpSocket()
+{
+    close(handle_);
+}
+
+TcpSocket TcpSocket::listen(const char* host, short port)
 {
     addrinfo* res = nullptr;
     addrinfo hints;
@@ -49,7 +54,7 @@ TcpSocketPtr TcpSocket::listen(const char* host, short port)
     if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &res) != 0)
     {
         LOG_ERROR("Getaddrinfo! Error: %s\n", strerror(errno));
-        return nullptr;
+        return TcpSocket();
     }
 
     // Пробуем создать сокет
@@ -89,17 +94,17 @@ TcpSocketPtr TcpSocket::listen(const char* host, short port)
     if (status == -1)
     {
         LOG_ERROR("Listen %s:%d failed! Error: %s\n", host, port, strerror(errno));
-        return nullptr;
+        return TcpSocket();
     }
 
-    auto socket = std::unique_ptr<TcpSocket>(new TcpSocket);
-    socket->handle_ = handle;
-    socket->addr_ = address;
+    TcpSocket socket;// = std::unique_ptr<TcpSocket>(new TcpSocket);
+    socket.handle_ = handle;
+    socket.addr_ = address;
 
     return socket;
 }
 
-TcpSocketPtr TcpSocket::connect(const char* host, short port)
+TcpSocket TcpSocket::connect(const char* host, short port)
 {
     addrinfo* res = nullptr;
     addrinfo hints;
@@ -111,7 +116,7 @@ TcpSocketPtr TcpSocket::connect(const char* host, short port)
     if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &res) != 0)
     {
         LOG_ERROR("Getaddrinfo! Error: %s\n", strerror(errno));
-        return nullptr;
+        return TcpSocket();
     }
 
     // Пробуем создать сокет
@@ -144,19 +149,14 @@ TcpSocketPtr TcpSocket::connect(const char* host, short port)
     if (status == -1)
     {
         LOG_ERROR("Connect %s:%d failed! Error: %s\n", host, port, strerror(errno));
-        return nullptr;
+        return TcpSocket();
     }
 
-    auto socket = std::unique_ptr<TcpSocket>(new TcpSocket);
-    socket->handle_ = handle;
-    socket->addr_ = address;
+    TcpSocket socket;// = std::unique_ptr<TcpSocket>(new TcpSocket);
+    socket.handle_ = handle;
+    socket.addr_ = address;
 
     return socket;
-}
-
-TcpSocket::~TcpSocket()
-{
-    close(handle_);
 }
 
 bool TcpSocket::makeNonBlock()
@@ -165,32 +165,40 @@ bool TcpSocket::makeNonBlock()
     DWORD nonBlocking = 1;
     if (ioctlsocket(handle_, FIONBIO, &nonBlocking) != 0)
     {
+        LOG_DEBUG("TcpSocket makeNonBlock failed! Error: %s\n", strerror(errno));
         return false;
     }
 #else
-    int nonBlocking = 1;
-    if (fcntl(handle_, F_SETFL, O_NONBLOCK, nonBlocking) != 0)
+    int flags = fcntl(handle_, F_GETFL, 0);
+    if (flags == -1)
     {
+        LOG_DEBUG("TcpSocket makeNonBlock failed! Error: %s\n", strerror(errno));
+        return false;
+    }
+
+    if (fcntl(handle_, F_SETFL, flags | O_NONBLOCK) != 0)
+    {
+        LOG_DEBUG("TcpSocket makeNonBlock failed! Error: %s\n", strerror(errno));
         return false;
     }
 #endif
     return true;
 }
 
-TcpSocketPtr TcpSocket::accept()
+TcpSocket TcpSocket::accept()
 {
     int newSocket = -1;
     sockaddr clientAddr;
     socklen_t len = sizeof(clientAddr);
     if (newSocket = ::accept(handle_, &clientAddr, &len); newSocket == -1)
     {
-        LOG_ERROR("TcpSocket accept failed! Error: %s\n", strerror(errno));
-        return nullptr;
+        LOG_DEBUG("TcpSocket accept failed! Error: %s\n", strerror(errno));
+        return TcpSocket();
     }
 
-    auto sock = std::unique_ptr<TcpSocket>(new TcpSocket);
-    sock->handle_ = newSocket;
-    sock->addr_ = clientAddr;
+    TcpSocket sock;// = std::unique_ptr<TcpSocket>(new TcpSocket);
+    sock.handle_ = newSocket;
+    sock.addr_ = clientAddr;
 
     LOG_DEBUG("New connection from %s port %d\n", inet_ntoa(((sockaddr_in*)&clientAddr)->sin_addr), ntohs(((sockaddr_in*)&clientAddr)->sin_port));
 

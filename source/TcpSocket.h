@@ -21,27 +21,34 @@ void close(int fd)
 bool initSockets();
 void shotdownSockets();
 
-class TcpSocket;
-using TcpSocketPtr = std::unique_ptr<TcpSocket>;
-
 class TcpSocket : public NonCopyable
 {
 public:
+    TcpSocket() = default;
     ~TcpSocket();
 
-    static TcpSocketPtr listen(const char* host, short port);
-    static TcpSocketPtr connect(const char* host, short port);
+    TcpSocket(TcpSocket&& other)
+    {
+        std::swap(handle_, other.handle_);
+    }
+    
+    TcpSocket& operator=(TcpSocket&& other)
+    {
+        std::swap(handle_, other.handle_);
+        return *this;
+    }
+
+    static TcpSocket listen(const char* host, short port);
+    static TcpSocket connect(const char* host, short port);
 
     bool makeNonBlock();
-    TcpSocketPtr accept();
+    TcpSocket accept();
 
     int getFd() const;
+    bool empty() const { return handle_ == -1; }
 
     int recv(const char* s, size_t size);
     int send(const char* s, size_t size);
-
-private:
-    TcpSocket() = default;
 
 private:
     int handle_ = -1;
