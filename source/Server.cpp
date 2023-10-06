@@ -147,8 +147,8 @@ void Server::onAccept(int epollfd, TcpSocket&& newClient)
     auto newClientIter = sockets_.insert(sockets_.end(), std::move(newClient));
     auto partnerIter = sockets_.insert(sockets_.end(), std::move(partner));
 
-    connections_.emplace(newClientFd, Connection { newClientIter, partnerIter, "" });
-    connections_.emplace(partnerFd, Connection { partnerIter, newClientIter, "" });
+    connections_.emplace(newClientFd, Connection { newClientIter, partnerIter, "", {} });
+    connections_.emplace(partnerFd, Connection { partnerIter, newClientIter, "", {} });
 
     LOG_DEBUG("Connected: %d - %d\n", newClientFd, partnerFd);
 }
@@ -173,6 +173,16 @@ void Server::onRead(int epollfd, int clientSocket)
     {
         epollMod(epollfd, partnerFd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
         conn.data.append(buffer, size);
+
+        conn.pgParser.parse(buffer, size);
+        auto packets = conn.pgParser.getPackets();
+        for (auto& p : packets)
+        {
+            if (p.type == 'Q')
+            {
+                LOG_ERROR("Query: %s\n", p.data.c_str());
+            }
+        }
     }
 }
 

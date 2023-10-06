@@ -1,8 +1,7 @@
 #pragma once
 
 #include "TcpSocket.h"
-
-#include <sys/select.h>
+#include "PostgresqlParser.h"
 
 #include <functional>
 #include <list>
@@ -37,7 +36,9 @@ private:
         SocketsIter client;
         SocketsIter partner;
         std::string data;
+        PostgresqlParser pgParser;
     };
+
     std::unordered_map<int, Connection> connections_;
 
     const char* dbHost_ = nullptr;

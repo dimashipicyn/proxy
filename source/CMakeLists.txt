@@ -7,4 +7,8 @@ target_sources(${PROJECT_NAME} PUBLIC
   Server.cpp
   NonCopyable.h
   Log.h
+  PostgresqlParser.h
+  PostgresqlParser.cpp
+  EventPool.h
+  EventPool.cpp
 )
