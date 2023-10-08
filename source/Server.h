@@ -44,7 +44,6 @@ private:
     const char* dbHost_ = nullptr;
     short dbPort_ = 0;
 
-    int maxSocket_ = 0;
     bool isOk_ = false;
 
     enum { BUFFER_SIZE = 4096 };

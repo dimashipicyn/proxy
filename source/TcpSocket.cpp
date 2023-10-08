@@ -49,8 +49,9 @@ TcpSocket TcpSocket::listen(const char* host, short port)
     memset(&hints, 0, sizeof(hints));
 
     // По хосту и порту получаем список адресов
-    hints.ai_family = AF_UNSPEC; // AF_INET или AF_INET6 если требуется
+    hints.ai_family = AF_INET; // AF_INET или AF_INET6 если требуется
     hints.ai_socktype = SOCK_STREAM; // TCP
+    hints.ai_protocol = IPPROTO_TCP;
     if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &res) != 0)
     {
         LOG_ERROR("Getaddrinfo! Error: %s\n", strerror(errno));

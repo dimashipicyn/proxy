@@ -2,11 +2,158 @@
 #include "Log.h"
 #include "TcpSocket.h"
 
-#include <sys/epoll.h>
-
+#include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <unordered_map>
+
+#ifdef __linux__
+#include <sys/epoll.h>
+#else
+#ifdef __APPLE__
+#include <sys/select.h>
+#else
+#include <winsock.h>
+#endif
+
+#define EPOLL_CTL_ADD 1
+#define EPOLL_CTL_MOD 2
+#define EPOLL_CTL_DEL 3
+
+#define EPOLLIN     (1 << 1)
+#define EPOLLOUT    (1 << 2)
+#define EPOLLHUP    (1 << 3)
+#define EPOLLRDHUP  (1 << 4)
+#define EPOLLERR    (1 << 5)
+
+union epoll_data
+{
+    void     *ptr;
+    int       fd;
+    uint32_t  u32;
+    uint64_t  u64;
+};
+
+struct epoll_event
+{
+    uint32_t events;  /* Epoll events */
+    epoll_data data;  /* User data variable */
+};
+
+namespace
+{
+fd_set readSockets;
+fd_set writeSockets;
+fd_set exceptSockets;
+int maxSocket = -1;
+std::unordered_map<int, epoll_data> epollData;
+}
+
+int epoll_create1(int /*flags*/)
+{
+    FD_ZERO(&readSockets);
+    FD_ZERO(&writeSockets);
+    return 0;
+}
+
+int epoll_ctl(int /*flags*/, int action, int fd, epoll_event* event)
+{
+    maxSocket = std::max(maxSocket, fd);
+    if (event)
+    {
+        epollData[fd] = event->data;
+    }
+
+    switch (action) {
+        case EPOLL_CTL_ADD:
+        case EPOLL_CTL_MOD:
+        {
+            if (!event)
+            {
+                break;
+            }
+            if (event->events & EPOLLIN)
+            {
+                FD_SET(fd, &readSockets);
+            }
+            if (event->events & EPOLLOUT)
+            {
+                FD_SET(fd, &writeSockets);
+            }
+            if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
+            {
+                FD_SET(fd, &exceptSockets);
+            }
+            break;
+        }
+        case EPOLL_CTL_DEL:
+        {
+            if (!event)
+            {
+                FD_CLR(fd, &readSockets);
+                FD_CLR(fd, &writeSockets);
+                FD_CLR(fd, &exceptSockets);
+                break;
+            }
+            if (event->events & EPOLLIN)
+            {
+                FD_CLR(fd, &readSockets);
+            }
+            if (event->events & EPOLLOUT)
+            {
+                FD_CLR(fd, &writeSockets);
+            }
+            if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
+            {
+                FD_CLR(fd, &exceptSockets);
+            }
+            break;
+        }
+        default:
+            assert(false);
+    }
+    return 0;
+}
+
+int epoll_wait(int /*epollfd*/, epoll_event* events, int maxEvents, int timeout)
+{
+    fd_set rs = readSockets, ws = writeSockets, es = exceptSockets;
+    timeval tv, *tvp = (timeout > 0 ? &tv : nullptr);
+    tv.tv_usec = timeout * 1000000;
+    if (select(maxSocket + 1, &rs, &ws, &es, tvp) == -1)
+    {
+        return -1;
+    }
+
+    int nfds = 0;
+    for (int i = 0; i <= maxSocket && nfds < maxEvents; i++)
+    {
+        events[nfds].events = 0;
+        if (FD_ISSET(i, &rs))
+        {
+            events[nfds].events |= EPOLLIN;
+        }
+        if (FD_ISSET(i, &ws))
+        {
+            events[nfds].events |= EPOLLOUT;
+        }
+        if (FD_ISSET(i, &es))
+        {
+            events[nfds].events |= (EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+        }
+        if (events[nfds].events)
+        {
+            events[nfds].data = epollData[i];
+            ++nfds;
+        }
+    }
+
+    return nfds;
+}
+
+#endif
 
 namespace
 {
@@ -164,7 +311,7 @@ void Server::onRead(int epollfd, int clientSocket)
 
     // Читаем данные из клиентского сокета
     int size = conn.client->recv(buffer, sizeof(buffer));
-    if (size < 0)
+    if (size <= 0)
     {
         // Клиент отключился или произошла ошибка, удаляем
         onError(epollfd, clientSocket);
@@ -192,7 +339,7 @@ void Server::onWrite(int epollfd, int clientSocket)
     auto& connPartner = connections_.at(conn.partner->getFd());;
 
     int size = conn.client->send(connPartner.data.c_str(), connPartner.data.size());
-    if (size < 0)
+    if (size <= 0)
     {
         // Клиент отключился или произошла ошибка, удаляем
         onError(epollfd, clientSocket);
