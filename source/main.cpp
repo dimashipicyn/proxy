@@ -1,7 +1,11 @@
 #include "Log.h"
 #include "Server.h"
 
+#ifdef _WIN32
+#include "GetOpt.h"
+#else
 #include <getopt.h>
+#endif
 
 enum Options
 {

@@ -5,13 +5,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
-#pragma comment(lib, "wsock32.lib")
-
-void close(int fd)
-{
-    closesocket(fd);
-}
-
+#include <ws2tcpip.h>
 #else
 #include <netinet/in.h>
 #endif

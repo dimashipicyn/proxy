@@ -9,6 +9,13 @@ target_sources(${PROJECT_NAME} PUBLIC
   Log.h
   PostgresqlParser.h
   PostgresqlParser.cpp
-  EventPool.h
-  EventPool.cpp
+  Utils.h
+  Utils.cpp
 )
+
+if (WIN32)
+target_sources(${PROJECT_NAME} PUBLIC
+  GetOpt.h
+  GetOpt.cpp
+)
+endif()

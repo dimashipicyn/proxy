@@ -1,23 +1,34 @@
 #include "TcpSocket.h"
 
 #include "Log.h"
+#include "Utils.h"
+
+#ifdef _WIN32
+void close(int fd)
+{
+    closesocket(fd);
+}
+
+#pragma comment(lib, "wsock32.lib")
+#pragma comment (lib, "Ws2_32.lib")
+#endif
 
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <netinet/in.h>
 #include <string>
 
 #ifdef _WIN32
-typedef socklen_t int;
+typedef int socklen_t;
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #endif
 
 bool initSockets()
@@ -54,7 +65,7 @@ TcpSocket TcpSocket::listen(const char* host, short port)
     hints.ai_protocol = IPPROTO_TCP;
     if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &res) != 0)
     {
-        LOG_ERROR("Getaddrinfo! Error: %s\n", strerror(errno));
+        LOG_ERROR("Getaddrinfo! Error: %s\n", getError().c_str());
         return TcpSocket();
     }
 
@@ -94,7 +105,7 @@ TcpSocket TcpSocket::listen(const char* host, short port)
 
     if (status == -1)
     {
-        LOG_ERROR("Listen %s:%d failed! Error: %s\n", host, port, strerror(errno));
+        LOG_ERROR("Listen %s:%d failed! Error: %s\n", host, port, getError().c_str());
         return TcpSocket();
     }
 
@@ -116,7 +127,7 @@ TcpSocket TcpSocket::connect(const char* host, short port)
     hints.ai_socktype = SOCK_STREAM; // TCP
     if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &res) != 0)
     {
-        LOG_ERROR("Getaddrinfo! Error: %s\n", strerror(errno));
+        LOG_ERROR("Getaddrinfo! Error: %s\n", getError().c_str());
         return TcpSocket();
     }
 
@@ -149,7 +160,7 @@ TcpSocket TcpSocket::connect(const char* host, short port)
 
     if (status == -1)
     {
-        LOG_ERROR("Connect %s:%d failed! Error: %s\n", host, port, strerror(errno));
+        LOG_ERROR("Connect %s:%d failed! Error: %s\n", host, port, getError().c_str());
         return TcpSocket();
     }
 
@@ -166,7 +177,7 @@ bool TcpSocket::makeNonBlock()
     DWORD nonBlocking = 1;
     if (ioctlsocket(handle_, FIONBIO, &nonBlocking) != 0)
     {
-        LOG_DEBUG("TcpSocket makeNonBlock failed! Error: %s\n", strerror(errno));
+        LOG_DEBUG("TcpSocket makeNonBlock failed! Error: %s\n", getError().c_str());
         return false;
     }
 #else

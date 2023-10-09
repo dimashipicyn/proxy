@@ -1,6 +1,7 @@
 #include "Server.h"
 #include "Log.h"
 #include "TcpSocket.h"
+#include "Utils.h"
 
 #include <cassert>
 #include <cstddef>
@@ -12,34 +13,36 @@
 #ifdef __linux__
 #include <sys/epoll.h>
 #else
+
 #ifdef __APPLE__
 #include <sys/select.h>
+typedef int SOCKET;
 #else
-#include <winsock.h>
+#include <winsock2.h>
 #endif
 
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_MOD 2
 #define EPOLL_CTL_DEL 3
 
-#define EPOLLIN     (1 << 1)
-#define EPOLLOUT    (1 << 2)
-#define EPOLLHUP    (1 << 3)
-#define EPOLLRDHUP  (1 << 4)
-#define EPOLLERR    (1 << 5)
+#define EPOLLIN (1 << 1)
+#define EPOLLOUT (1 << 2)
+#define EPOLLHUP (1 << 3)
+#define EPOLLRDHUP (1 << 4)
+#define EPOLLERR (1 << 5)
 
 union epoll_data
 {
-    void     *ptr;
-    int       fd;
-    uint32_t  u32;
-    uint64_t  u64;
+    void* ptr;
+    int fd;
+    uint32_t u32;
+    uint64_t u64;
 };
 
 struct epoll_event
 {
-    uint32_t events;  /* Epoll events */
-    epoll_data data;  /* User data variable */
+    uint32_t events; /* Epoll events */
+    epoll_data data; /* User data variable */
 };
 
 namespace
@@ -60,59 +63,60 @@ int epoll_create1(int /*flags*/)
 
 int epoll_ctl(int /*flags*/, int action, int fd, epoll_event* event)
 {
-    maxSocket = std::max(maxSocket, fd);
+    maxSocket = std::max<int>(maxSocket, fd);
     if (event)
     {
         epollData[fd] = event->data;
     }
 
-    switch (action) {
-        case EPOLL_CTL_ADD:
-        case EPOLL_CTL_MOD:
+    switch (action)
+    {
+    case EPOLL_CTL_ADD:
+    case EPOLL_CTL_MOD:
+    {
+        if (!event)
         {
-            if (!event)
-            {
-                break;
-            }
-            if (event->events & EPOLLIN)
-            {
-                FD_SET(fd, &readSockets);
-            }
-            if (event->events & EPOLLOUT)
-            {
-                FD_SET(fd, &writeSockets);
-            }
-            if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
-            {
-                FD_SET(fd, &exceptSockets);
-            }
             break;
         }
-        case EPOLL_CTL_DEL:
+        if (event->events & EPOLLIN)
         {
-            if (!event)
-            {
-                FD_CLR(fd, &readSockets);
-                FD_CLR(fd, &writeSockets);
-                FD_CLR(fd, &exceptSockets);
-                break;
-            }
-            if (event->events & EPOLLIN)
-            {
-                FD_CLR(fd, &readSockets);
-            }
-            if (event->events & EPOLLOUT)
-            {
-                FD_CLR(fd, &writeSockets);
-            }
-            if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
-            {
-                FD_CLR(fd, &exceptSockets);
-            }
+            FD_SET((SOCKET)fd, &readSockets);
+        }
+        if (event->events & EPOLLOUT)
+        {
+            FD_SET((SOCKET)fd, &writeSockets);
+        }
+        if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
+        {
+            FD_SET((SOCKET)fd, &exceptSockets);
+        }
+        break;
+    }
+    case EPOLL_CTL_DEL:
+    {
+        if (!event)
+        {
+            FD_CLR((SOCKET)fd, &readSockets);
+            FD_CLR((SOCKET)fd, &writeSockets);
+            FD_CLR((SOCKET)fd, &exceptSockets);
             break;
         }
-        default:
-            assert(false);
+        if (event->events & EPOLLIN)
+        {
+            FD_CLR((SOCKET)fd, &readSockets);
+        }
+        if (event->events & EPOLLOUT)
+        {
+            FD_CLR((SOCKET)fd, &writeSockets);
+        }
+        if (event->events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
+        {
+            FD_CLR((SOCKET)fd, &exceptSockets);
+        }
+        break;
+    }
+    default:
+        assert(false);
     }
     return 0;
 }
@@ -164,7 +168,7 @@ void epollAdd(int epfd, int fd, uint32_t events)
     ev.data.fd = fd;
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == -1)
     {
-        LOG_ERROR("Epoll_ctl failed! Error: %s\n", strerror(errno));
+        LOG_ERROR("Epoll_ctl failed! Error: %s\n", getError().c_str());
     }
 }
 
@@ -175,14 +179,14 @@ void epollMod(int epfd, int fd, uint32_t events)
     ev.data.fd = fd;
     if (epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev) == -1)
     {
-        LOG_ERROR("Epoll_ctl failed! Error: %s\n", strerror(errno));
+        LOG_ERROR("Epoll_ctl failed! Error: %s\n", getError().c_str());
     }
 }
 }
 
 Server::Server(const char* host, short port, const char* dbHost, short dbPort)
-    : dbHost_{ dbHost }
-    , dbPort_{ dbPort }
+    : dbHost_ { dbHost }
+    , dbPort_ { dbPort }
 {
     if (initSockets())
     {
@@ -191,6 +195,8 @@ Server::Server(const char* host, short port, const char* dbHost, short dbPort)
             isOk_ = listener_.makeNonBlock();
         }
     }
+
+    isOk_ &= openSqlLogFile();
 }
 
 void Server::run()
@@ -206,7 +212,7 @@ void Server::run()
     int epollfd = epoll_create1(0);
     if (epollfd == -1)
     {
-        LOG_ERROR("Epoll failed! Error: %s\n", strerror(errno));
+        LOG_ERROR("Epoll failed! Error: %s\n", getError().c_str());
         return;
     }
 
@@ -216,7 +222,7 @@ void Server::run()
     while (true)
     {
         int nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
-		for (int i = 0; i < nfds; i++)
+        for (int i = 0; i < nfds; i++)
         // Проверяем каждый сокет на активность
         {
             int clientSocket = events[i].data.fd;
@@ -228,9 +234,8 @@ void Server::run()
                 {
                     LOG_DEBUG("Accept socket: %d\n", events[i].data.fd);
                     TcpSocket newClient = listener_.accept();
-                    while (!newClient.empty())
+                    while (!newClient.empty() && newClient.makeNonBlock())
                     {
-                        newClient.makeNonBlock();
                         // Принимаем соединения
                         onAccept(epollfd, std::move(newClient));
                         newClient = listener_.accept();
@@ -279,12 +284,11 @@ void Server::onAccept(int epollfd, TcpSocket&& newClient)
     int newClientFd = newClient.getFd();
 
     auto partner = TcpSocket::connect(dbHost_, dbPort_);
-    if (partner.empty())
+    if (partner.empty() || !partner.makeNonBlock())
     {
         return;
     }
 
-    partner.makeNonBlock();
     int partnerFd = partner.getFd();
 
     // Добавляем новый клиентский сокет в множество
@@ -321,22 +325,15 @@ void Server::onRead(int epollfd, int clientSocket)
         epollMod(epollfd, partnerFd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
         conn.data.append(buffer, size);
 
-        conn.pgParser.parse(buffer, size);
-        auto packets = conn.pgParser.getPackets();
-        for (auto& p : packets)
-        {
-            if (p.type == 'Q')
-            {
-                LOG_ERROR("Query: %s\n", p.data.c_str());
-            }
-        }
+        processPacket(conn.pgParser, buffer, size);
     }
 }
 
 void Server::onWrite(int epollfd, int clientSocket)
 {
     auto& conn = connections_.at(clientSocket);
-    auto& connPartner = connections_.at(conn.partner->getFd());;
+    auto& connPartner = connections_.at(conn.partner->getFd());
+    ;
 
     int size = conn.client->send(connPartner.data.c_str(), connPartner.data.size());
     if (size <= 0)
@@ -372,4 +369,30 @@ void Server::onError(int epollfd, int clientSocket)
     connections_.erase(partnerFd);
 
     LOG_DEBUG("Disconnect: %d - %d\n", clientFd, partnerFd);
+}
+
+bool Server::openSqlLogFile()
+{
+    std::string filename = "sql_log_" + getTimeStamp() + ".txt";
+    sqlLogFile_.open(filename);
+    if (!sqlLogFile_.is_open())
+    {
+        LOG_ERROR("Failed open or create file: %s\n", filename.c_str());
+    }
+
+    return sqlLogFile_.is_open();
+}
+
+void Server::processPacket(PostgresqlParser& pgParser, const char* buffer, int size)
+{
+    pgParser.parse(buffer, size);
+    const auto packets = pgParser.getPackets();
+    for (const auto& p : packets)
+    {
+        if (p.type == 'Q')
+        {
+            LOG_DEBUG("Query: %s\n", p.data.c_str());
+            sqlLogFile_ << p.data << std::endl;
+        }
+    }
 }

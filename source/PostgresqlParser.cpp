@@ -7,7 +7,11 @@
 #include <cstdint>
 #include <cstring>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <netinet/in.h>
+#endif
 
 void PostgresqlParser::parse(const char* s, int size)
 {
@@ -55,7 +59,7 @@ void PostgresqlParser::parse(const char* s, int size)
         }
         case ParseData:
         {
-            size_t lengthRequired = std::max(currentPacket_.length - 4, 0); // 4 byte sizeof length
+            size_t lengthRequired = std::max<int>(currentPacket_.length - 4, 0); // 4 byte sizeof length
             if (buffer.length() >= lengthRequired)
             {
                 currentPacket_.data.append(buffer.c_str(), lengthRequired);

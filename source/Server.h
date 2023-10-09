@@ -3,10 +3,10 @@
 #include "TcpSocket.h"
 #include "PostgresqlParser.h"
 
-#include <functional>
 #include <list>
 #include <string>
 #include <unordered_map>
+#include <fstream>
 
 class Server
 {
@@ -26,6 +26,9 @@ private:
     void onWrite(int epollfd, int clientSocket);
     void onError(int epollfd, int clientSocket);
 
+    bool openSqlLogFile();
+    void processPacket(PostgresqlParser& pgParser, const char* buffer, int size);
+
 private:
     TcpSocket listener_;
     std::list<TcpSocket> sockets_;
@@ -40,6 +43,8 @@ private:
     };
 
     std::unordered_map<int, Connection> connections_;
+
+    std::ofstream sqlLogFile_;
 
     const char* dbHost_ = nullptr;
     short dbPort_ = 0;

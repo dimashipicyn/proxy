@@ -4,7 +4,11 @@ project(proxy VERSION 0.1.0 LANGUAGES C CXX)
 add_executable(${PROJECT_NAME})
 add_subdirectory(source)
 
+if (WIN32)
+target_compile_options(${PROJECT_NAME} PUBLIC /Wall /pedantic)
+else()
 target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra -Werror -pedantic)
+endif()
 
 if(ASAN_ENABLED)
   if(MSVC)
