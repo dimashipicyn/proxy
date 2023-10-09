@@ -78,6 +78,11 @@ int epoll_ctl(int /*flags*/, int action, int fd, epoll_event* event)
         {
             break;
         }
+
+        FD_CLR((SOCKET)fd, &readSockets);
+        FD_CLR((SOCKET)fd, &writeSockets);
+        FD_CLR((SOCKET)fd, &exceptSockets);
+
         if (event->events & EPOLLIN)
         {
             FD_SET((SOCKET)fd, &readSockets);
@@ -325,7 +330,15 @@ void Server::onRead(int epollfd, int clientSocket)
         epollMod(epollfd, partnerFd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
         conn.data.append(buffer, size);
 
-        processPacket(conn.pgParser, buffer, size);
+        try
+        {
+            processPacket(conn.pgParser, buffer, size);
+        }
+        catch (std::bad_alloc& e)
+        {
+            LOG_ERROR("Error: %s\n", e.what());
+            onError(epollfd, clientSocket);
+        }
     }
 }
 
@@ -333,7 +346,6 @@ void Server::onWrite(int epollfd, int clientSocket)
 {
     auto& conn = connections_.at(clientSocket);
     auto& connPartner = connections_.at(conn.partner->getFd());
-    ;
 
     int size = conn.client->send(connPartner.data.c_str(), connPartner.data.size());
     if (size <= 0)
@@ -374,10 +386,10 @@ void Server::onError(int epollfd, int clientSocket)
 bool Server::openSqlLogFile()
 {
     std::string filename = "sql_log_" + getTimeStamp() + ".txt";
-    sqlLogFile_.open(filename);
+    sqlLogFile_.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!sqlLogFile_.is_open())
     {
-        LOG_ERROR("Failed open or create file: %s\n", filename.c_str());
+        LOG_ERROR("Failed open or create file: '%s' Error: %s\n", filename.c_str(), getError().c_str());
     }
 
     return sqlLogFile_.is_open();

@@ -17,9 +17,9 @@ enum Options
 
 int main(int argc, char** argv)
 {
-    const char* host = "0.0.0.0";
+    const char* host = "localhost";
     int port = 5433;
-    const char* dbHost = "0.0.0.0";
+    const char* dbHost = "localhost";
     int dbPort = 5432;
 
 
